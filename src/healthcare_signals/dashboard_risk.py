@@ -285,22 +285,25 @@ def _on_top_risk_click(event):
 
 top_risk_table.on_click(_on_top_risk_click)
 
+stability_section = pn.Accordion(
+    ("Stability / Volatility", pn.bind(stability_view, provider_dropdown)),
+    #active=[],  # collapsed by default
+)
+
 # --- Layout -----------------------------------------------------------------
 left_panel = pn.Column(
     pn.pane.Markdown("### Top Risk Providers"),
     top_risk_table,
+    stability_section,
 )
 
-stability_section = pn.Accordion(
-    ("Stability / Volatility", pn.bind(stability_view, provider_dropdown)),
-    active=[],  # collapsed by default
-)
+
 
 right_panel = pn.Column(
     pn.pane.Markdown("# Provider Risk Dashboard"),
     pn.Row(provider_search, provider_dropdown),
     pn.bind(provider_view, provider_dropdown),
-    stability_section,
+    
 )
 
 dashboard = pn.Row(left_panel, right_panel)
