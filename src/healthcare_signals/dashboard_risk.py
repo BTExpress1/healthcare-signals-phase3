@@ -363,6 +363,7 @@ right_panel = pn.Column(
     pn.pane.Markdown("# Provider Risk Dashboard"),
     pn.Row(provider_search, provider_dropdown),
     pn.bind(provider_view, provider_dropdown),
+    margin=(10,10,80,10), # top, right, bottom, left
     
 )
 
