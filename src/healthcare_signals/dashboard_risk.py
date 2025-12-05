@@ -223,6 +223,7 @@ def provider_view(pid):
     summary_table = pn.widgets.DataFrame(
         summary_df,
         height=180,
+        width=1000,
     )
 
     return pn.Column(
@@ -262,14 +263,14 @@ def stability_view(pid):
     vol_365 = latest.get("claims_std_365d", float("nan"))
 
     stability_markdown = f"""
-### Stability / Volatility (Latest Snapshot)
+    ### Stability / Volatility (Latest Snapshot)
 
-- **90d volatility (claims_std_90d)**: {vol_90:.2f}
-- **180d volatility (claims_std_180d)**: {vol_180:.2f}
-- **365d volatility (claims_std_365d)**: {vol_365:.2f}
+    - **90d volatility (claims_std_90d)**: {vol_90:.2f}
+    - **180d volatility (claims_std_180d)**: {vol_180:.2f}
+    - **365d volatility (claims_std_365d)**: {vol_365:.2f}
 
-Lower volatility ⇒ more stable utilization pattern.
-"""
+    Lower volatility ⇒ more stable utilization pattern.
+    """
 
     return pn.pane.Markdown(stability_markdown)
 
