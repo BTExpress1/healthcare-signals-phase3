@@ -44,11 +44,23 @@ risk_by_provider = (
 )
 
 provider_ids_sorted = risk_by_provider.index.tolist()
+provider_ids_sorted_str = [str(pid) for pid in provider_ids_sorted]
 
-provider_selector = pn.widgets.Select(
+# Type-ahead search widget
+provider_search = pn.widgets.AutocompleteInput(
     name="Provider ID",
-    options=provider_ids_sorted,
+    options=provider_ids_sorted_str,
+    placeholder="Start typing provider_id…",
+    case_sensitive=False,
+    restrict=True,
 )
+
+def provider_from_search(value):
+    try:
+        pid = int(value)
+    except (TypeError, ValueError):
+        pid = provider_ids_sorted[0]
+    return provider_view(pid)
 
 
 def provider_view(pid):
@@ -152,8 +164,8 @@ def provider_view(pid):
 # Bind interactive component
 dashboard = pn.Column(
     pn.pane.Markdown("# Provider Risk Dashboard"),
-    provider_selector,
-    pn.bind(provider_view, provider_selector),
+    provider_search,
+    pn.bind(provider_from_search, provider_search),
 )
 
 dashboard.servable()
