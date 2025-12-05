@@ -1,16 +1,13 @@
 import pandas as pd
 import panel as pn
-import hvplot.pandas
-import os
+import hvplot.pandas  # noqa: F401
 import holoviews as hv
 
-pn.extension('tabulator')
+pn.extension("tabulator")
 
 
-
-# Load the risk-scored panel
+# --- Load the risk-scored panel --------------------------------------------
 def load_panel():
-    # Local paths for panel convert / dev (try a few common roots)
     candidate_paths = [
         "../../data/processed/provider_panel_risk_scored.csv",
         "../data/processed/provider_panel_risk_scored.csv",
@@ -18,34 +15,48 @@ def load_panel():
     ]
     for path in candidate_paths:
         try:
-            return pd.read_csv(path)
+            df = pd.read_csv(path)
+            break
         except Exception:
-            pass
+            df = None
 
-    # Browser (Pyodide) → load over HTTP from docs/
-    try:
-        from pyodide.http import open_url
-        f = open_url("provider_panel_risk_scored.csv")
-        return pd.read_csv(f)
-    except Exception as e:
-        raise FileNotFoundError(
-            "provider_panel_risk_scored.csv not found. "
-            "Ensure docs/provider_panel_risk_scored.csv exists and is committed."
-        ) from e
+    if df is None:
+        # Browser (Pyodide) → load over HTTP from docs/
+        try:
+            from pyodide.http import open_url
 
-panel = load_panel()
+            f = open_url("provider_panel_risk_scored.csv")
+            df = pd.read_csv(f)
+        except Exception as e:
+            raise FileNotFoundError(
+                "provider_panel_risk_scored.csv not found. "
+                "Ensure docs/provider_panel_risk_scored.csv exists and is committed."
+            ) from e
 
-# Sort providers by latest risk score (highest risk first)
-# Risk-ranked provider list
+    # Normalize types once here
+    df["provider_id"] = (
+        df["provider_id"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.replace(",", "", regex=False)
+        .str.strip()
+    )
+    df["as_of_date"] = pd.to_datetime(df["as_of_date"])
+    return df
+
+
+provider_panel = load_panel()
+
+# --- Global provider list (sorted by latest risk) --------------------------
 risk_by_provider = (
-    panel.sort_values("as_of_date")
-         .groupby("provider_id")["provider_risk_score"]
-         .last()
-         .sort_values(ascending=False)
+    provider_panel.sort_values("as_of_date")
+    .groupby("provider_id")["provider_risk_score"]
+    .last()
+    .sort_values(ascending=False)
 )
 
-provider_ids_sorted = risk_by_provider.index.tolist()
-provider_ids_sorted_str = [str(pid) for pid in provider_ids_sorted]
+provider_ids_sorted = risk_by_provider.index.tolist()  # already strings
+provider_ids_sorted_str = provider_ids_sorted
 
 # Search widget (free text)
 provider_search = pn.widgets.TextInput(
@@ -57,7 +68,9 @@ provider_search = pn.widgets.TextInput(
 provider_dropdown = pn.widgets.Select(
     name="Select Provider",
     options=provider_ids_sorted_str,
+    value=provider_ids_sorted_str[0] if provider_ids_sorted_str else None,
 )
+
 
 # Filter logic
 @pn.depends(provider_search.param.value, watch=True)
@@ -66,21 +79,19 @@ def update_dropdown(search_text):
         provider_dropdown.options = provider_ids_sorted_str
     else:
         filtered = [pid for pid in provider_ids_sorted_str if search_text in pid]
-        # If no matches, fall back to full list instead of a fake value
-        provider_dropdown.options = filtered if filtered else provider_ids_sorted_str
+        provider_dropdown.options = filtered or provider_ids_sorted_str
+        if provider_dropdown.value not in provider_dropdown.options:
+            provider_dropdown.value = provider_dropdown.options[0]
 
 
-def provider_from_dropdown(value):
-    try:
-        pid = int(value)
-    except:
-        pid = provider_ids_sorted[0]
-    return provider_view(pid)
-
-
+# --- Per-provider views -----------------------------------------------------
 def provider_view(pid):
+    if not pid:
+        return pn.pane.Markdown("### Select a provider to see their history.")
+
+    pid = str(pid).strip()
     df = (
-        panel[panel.provider_id == pid]
+        provider_panel[provider_panel["provider_id"] == pid]
         .rename(columns={"as_of_date": "snapshot_dt"})
         .sort_values("snapshot_dt")
     )
@@ -110,35 +121,41 @@ def provider_view(pid):
     anomaly_dates = df.loc[df["anomaly_total_flags"] > 0, "snapshot_dt"].unique()
 
     if len(anomaly_dates):
-        spans = hv.Overlay([
-            hv.VSpan(d - pd.Timedelta(days=0.5),
-                     d + pd.Timedelta(days=0.5)).opts(alpha=0.15, color="orange")
-            for d in anomaly_dates
-        ])
-        risk_plot = (risk_line * spans)
+        spans = hv.Overlay(
+            [
+                hv.VSpan(
+                    d - pd.Timedelta(days=0.5),
+                    d + pd.Timedelta(days=0.5),
+                ).opts(alpha=0.15, color="orange")
+                for d in anomaly_dates
+            ]
+        )
+        risk_plot = risk_line * spans
     else:
         risk_plot = risk_line
 
     latest = df.iloc[-1]
 
-    comp_df = pd.DataFrame({
-        "component": [
-            "Isolation Forest",
-            "LOF",
-            "Z-score Anomalies",
-            "Momentum (Claims 90d Δ)",
-            "Recency",
-            "Z-score Shift",
-        ],
-        "value": [
-            latest.get("iforest_norm", 0.0),
-            latest.get("lof_norm", 0.0),
-            latest.get("flags_norm", 0.0),
-            latest.get("momentum_norm", 0.0),
-            latest.get("recency_norm", 0.0),
-            latest.get("zscore_shift_norm", 0.0),
-        ],
-    })
+    comp_df = pd.DataFrame(
+        {
+            "component": [
+                "Isolation Forest",
+                "LOF",
+                "Z-score Anomalies",
+                "Momentum (Claims 90d Δ)",
+                "Recency",
+                "Z-score Shift",
+            ],
+            "value": [
+                latest.get("iforest_norm", 0.0),
+                latest.get("lof_norm", 0.0),
+                latest.get("flags_norm", 0.0),
+                latest.get("momentum_norm", 0.0),
+                latest.get("recency_norm", 0.0),
+                latest.get("zscore_shift_norm", 0.0),
+            ],
+        }
+    )
 
     risk_decomp_plot = comp_df.hvplot.bar(
         x="component",
@@ -172,14 +189,20 @@ def provider_view(pid):
 
 
 def stability_view(pid):
+    if not pid:
+        return pn.pane.Markdown("### Stability / Volatility\n\nSelect a provider.")
+
+    pid = str(pid).strip()
     df = (
-        panel[panel.provider_id == pid]
+        provider_panel[provider_panel["provider_id"] == pid]
         .rename(columns={"as_of_date": "snapshot_dt"})
         .sort_values("snapshot_dt")
     )
 
     if df.empty:
-        return pn.pane.Markdown(f"### Stability / Volatility\n\nNo data available for provider {pid}.")
+        return pn.pane.Markdown(
+            f"### Stability / Volatility\n\nNo data available for provider {pid}."
+        )
 
     df["snapshot_dt"] = pd.to_datetime(df["snapshot_dt"])
 
@@ -202,28 +225,36 @@ Lower volatility ⇒ more stable utilization pattern.
     return pn.pane.Markdown(stability_markdown)
 
 
-
-# === Top Risk Providers table (left side) ===
+# --- Top Risk Providers table (left side) ----------------------------------
 TOP_N = 10
 
 _latest = (
-    panel.sort_values("as_of_date")
-         .groupby("provider_id")
-         .tail(1)
+    provider_panel.sort_values("as_of_date")
+    .groupby("provider_id")
+    .tail(1)
 )
 
 top_risk_df = (
     _latest.sort_values("provider_risk_score", ascending=False)
-           .head(TOP_N)[
-               [
-                   "provider_id",
-                   "provider_risk_score",
-                   "risk_rank",
-                   "anomaly_total_flags",
-                   "days_since_last",
-               ]
-           ]
-           .reset_index(drop=True)
+    .head(TOP_N)[
+        [
+            "provider_id",
+            "provider_risk_score",
+            "risk_rank",
+            "anomaly_total_flags",
+            "days_since_last",
+        ]
+    ]
+    .reset_index(drop=True)
+)
+
+# Ensure ids are strings here too (prevents numeric spinners, thousands separators)
+top_risk_df["provider_id"] = (
+    top_risk_df["provider_id"]
+    .astype(str)
+    .str.replace(".0", "", regex=False)
+    .str.replace(",", "", regex=False)
+    .str.strip()
 )
 
 top_risk_table = pn.widgets.Tabulator(
@@ -231,29 +262,36 @@ top_risk_table = pn.widgets.Tabulator(
     selectable=True,
     height=500,
     width=350,
+    # If you want the table fully read-only, uncomment:
+    # disabled=True,  # makes Tabulator non-editable while preserving display
 )
+
 
 def _on_top_risk_select(event):
     if not event.new:
         return
-    row_idx = event.new[0]
-    raw_id = top_risk_df.iloc[row_idx]["provider_id"]
-    try:
-        pid_int = int(raw_id)
-    except (TypeError, ValueError):
-        pid_int = provider_ids_sorted[0]
 
-    pid = str(pid_int)
+    row_idx = event.new[0]
+    if not (0 <= row_idx < len(top_risk_df)):
+        return
+
+    pid = str(top_risk_df.iloc[row_idx]["provider_id"]).strip()
 
     # Update search text and dropdown selection
     provider_search.value = pid
-    provider_dropdown.value = pid  # triggers provider_from_dropdown
-
+    if pid in provider_dropdown.options:
+        provider_dropdown.value = pid
+    elif provider_dropdown.options:
+        provider_dropdown.options = [pid] + list(provider_dropdown.options)
+        provider_dropdown.value = pid
+    else:
+        provider_dropdown.options = [pid]
+        provider_dropdown.value = pid
 
 
 top_risk_table.param.watch(_on_top_risk_select, "selection")
 
-# Bind interactive component
+# --- Layout -----------------------------------------------------------------
 left_panel = pn.Column(
     pn.pane.Markdown("### Top Risk Providers"),
     top_risk_table,
@@ -266,9 +304,5 @@ right_panel = pn.Column(
     pn.bind(stability_view, provider_dropdown),
 )
 
-
-
 dashboard = pn.Row(left_panel, right_panel)
-
 dashboard.servable()
-
