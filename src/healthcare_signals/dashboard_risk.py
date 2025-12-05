@@ -1,18 +1,32 @@
 import pandas as pd
 import panel as pn
 import hvplot.pandas
+import os
 
 pn.extension('tabulator')
 
 # Load the risk-scored panel
-import pandas as pd
+def load_panel():
+    # Local load (panel convert / dev)
+    local_path = os.path.join(
+        os.path.dirname(__file__),
+        "../../data/processed/provider_panel_risk_scored.csv"
+    )
+    if os.path.exists(local_path):
+        return pd.read_csv(local_path)
 
-try:
-    # Local path for build time (when running panel convert)
-    panel = pd.read_csv("../../data/processed/provider_panel_risk_scored.csv")
-except FileNotFoundError:
-    # Browser / GitHub Pages path (same folder as index.html)
-    panel = pd.read_csv("provider_panel_risk_scored.csv")
+    # Browser (Pyodide) load over HTTP from docs/
+    try:
+        from pyodide.http import open_url  # available in browser
+        f = open_url("provider_panel_risk_scored.csv")
+        return pd.read_csv(f)
+    except Exception as e:
+        raise FileNotFoundError(
+            "Could not load provider_panel_risk_scored.csv. "
+            "Ensure docs/provider_panel_risk_scored.csv exists and is committed."
+        ) from e
+
+panel = load_panel()
 
 
 # Prepare provider list for dropdown
