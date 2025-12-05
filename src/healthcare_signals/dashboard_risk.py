@@ -167,7 +167,7 @@ def provider_view(pid):
         rot=45,
     )
 
-    summary_table = df[
+    summary_df = df[
         [
             "provider_id",
             "snapshot_dt",
@@ -175,9 +175,14 @@ def provider_view(pid):
             "risk_rank",
             "anomaly_total_flags",
             "claims_90d_vs_prev90d",
-            "days_since_last",
+            "days_since_last",            
         ]
     ].sort_values("snapshot_dt")
+    
+    summary_table = pn.widgets.DataFrame(
+        summary_df,
+        height=180,        
+    )
 
     return pn.Column(
         pn.Row(line_plot, risk_plot),
@@ -295,8 +300,8 @@ left_panel = pn.Column(
     pn.pane.Markdown("### Top Risk Providers"),
     top_risk_table,
     pn.pane.Markdown("### Stability / Volatility"),
-    # pn.bind(stability_view, provider_dropdown),
-    stability_section,
+    pn.bind(stability_view, provider_dropdown),
+    #stability_section,
     
 )
 
