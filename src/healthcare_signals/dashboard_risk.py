@@ -295,10 +295,9 @@ top_risk_df = (
             "days_since_last",
         ]
     ]
-    .reset_index(drop=True)
 )
 
-# Ensure ids are strings here too (prevents numeric spinners, thousands separators)
+# Normalize ID + 1-based UX index
 top_risk_df["provider_id"] = (
     top_risk_df["provider_id"]
     .astype(str)
@@ -307,23 +306,28 @@ top_risk_df["provider_id"] = (
     .str.strip()
 )
 
+top_risk_df = top_risk_df.reset_index(drop=True)
+top_risk_df.index = top_risk_df.index + 1  # Display index 1..N
+
+# 🔒 Make all columns non-editable via editors=None
+non_editable_editors = {col: None for col in top_risk_df.columns}
+
 top_risk_table = pn.widgets.Tabulator(
     top_risk_df,
-    selectable=True,   # rows are still visually selectable
+    selectable=True,
     height=500,
     width=350,
+    editors=non_editable_editors,
 )
 
-
 def _on_top_risk_click(event):
-    # event.row is the integer row index in top_risk_df
-    row_idx = event.row
-    if not (0 <= row_idx < len(top_risk_df)):
+    idx = event.row  # DataFrame index label (1..N)
+    if idx not in top_risk_df.index:
         return
 
-    pid = str(top_risk_df.iloc[row_idx]["provider_id"]).strip()
-
+    pid = str(top_risk_df.loc[idx, "provider_id"]).strip()
     provider_search.value = pid
+
     if pid in provider_dropdown.options:
         provider_dropdown.value = pid
     elif provider_dropdown.options:
@@ -334,6 +338,8 @@ def _on_top_risk_click(event):
         provider_dropdown.value = pid
 
 top_risk_table.on_click(_on_top_risk_click)
+
+
 
 stability_section = pn.Accordion(
     ("Stability / Volatility", pn.bind(stability_view, provider_dropdown)),
