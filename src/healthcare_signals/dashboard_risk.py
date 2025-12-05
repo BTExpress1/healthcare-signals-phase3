@@ -58,6 +58,9 @@ def provider_view(pid):
         .sort_values("snapshot_dt")
     )
 
+    # Ensure datetime for plotting & spans
+    df["snapshot_dt"] = pd.to_datetime(df["snapshot_dt"])
+
     # === Main trends ===
     line_plot = df.hvplot.line(
         x="snapshot_dt",
@@ -136,12 +139,13 @@ def provider_view(pid):
 
     return pn.Column(
         pn.pane.Markdown(f"## Provider {pid} Dashboard"),
-        pn.Row(line_plot, risk_plot),         # side-by-side charts
+        pn.Row(line_plot, risk_plot),
         pn.pane.Markdown("### Risk Decomposition"),
         risk_decomp_plot,
         pn.pane.Markdown("### Historical Summary"),
         summary_table,
     )
+
 
 
 
