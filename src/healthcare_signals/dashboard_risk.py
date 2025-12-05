@@ -295,9 +295,10 @@ top_risk_df = (
             "days_since_last",
         ]
     ]
+    .reset_index(drop=True)
 )
 
-# Normalize ID + 1-based UX index
+# Normalize provider_id
 top_risk_df["provider_id"] = (
     top_risk_df["provider_id"]
     .astype(str)
@@ -306,10 +307,10 @@ top_risk_df["provider_id"] = (
     .str.strip()
 )
 
-top_risk_df = top_risk_df.reset_index(drop=True)
-top_risk_df.index = top_risk_df.index + 1  # Display index 1..N
+# Add user-facing rank column (1..N) as first column
+top_risk_df.insert(0, "Rank", range(1, len(top_risk_df) + 1))
 
-# 🔒 Make all columns non-editable via editors=None
+# Make all columns non-editable
 non_editable_editors = {col: None for col in top_risk_df.columns}
 
 top_risk_table = pn.widgets.Tabulator(
@@ -321,13 +322,13 @@ top_risk_table = pn.widgets.Tabulator(
 )
 
 def _on_top_risk_click(event):
-    idx = event.row  # DataFrame index label (1..N)
-    if idx not in top_risk_df.index:
+    row_idx = event.row  # 0-based row position
+    if row_idx is None or not (0 <= row_idx < len(top_risk_df)):
         return
 
-    pid = str(top_risk_df.loc[idx, "provider_id"]).strip()
-    provider_search.value = pid
+    pid = str(top_risk_df.iloc[row_idx]["provider_id"]).strip()
 
+    provider_search.value = pid
     if pid in provider_dropdown.options:
         provider_dropdown.value = pid
     elif provider_dropdown.options:
@@ -338,6 +339,7 @@ def _on_top_risk_click(event):
         provider_dropdown.value = pid
 
 top_risk_table.on_click(_on_top_risk_click)
+
 
 
 
