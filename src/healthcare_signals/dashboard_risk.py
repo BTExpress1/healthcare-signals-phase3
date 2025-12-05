@@ -259,25 +259,20 @@ top_risk_df["provider_id"] = (
 
 top_risk_table = pn.widgets.Tabulator(
     top_risk_df,
-    selectable=True,
+    selectable=True,   # rows are still visually selectable
     height=500,
     width=350,
-    # If you want the table fully read-only, uncomment:
-    # disabled=True,  # makes Tabulator non-editable while preserving display
 )
 
 
-def _on_top_risk_select(event):
-    if not event.new:
-        return
-
-    row_idx = event.new[0]
+def _on_top_risk_click(event):
+    # event.row is the integer row index in top_risk_df
+    row_idx = event.row
     if not (0 <= row_idx < len(top_risk_df)):
         return
 
     pid = str(top_risk_df.iloc[row_idx]["provider_id"]).strip()
 
-    # Update search text and dropdown selection
     provider_search.value = pid
     if pid in provider_dropdown.options:
         provider_dropdown.value = pid
@@ -288,8 +283,7 @@ def _on_top_risk_select(event):
         provider_dropdown.options = [pid]
         provider_dropdown.value = pid
 
-
-top_risk_table.param.watch(_on_top_risk_select, "selection")
+top_risk_table.on_click(_on_top_risk_click)
 
 # --- Layout -----------------------------------------------------------------
 left_panel = pn.Column(
@@ -297,11 +291,16 @@ left_panel = pn.Column(
     top_risk_table,
 )
 
+stability_section = pn.Accordion(
+    ("Stability / Volatility", pn.bind(stability_view, provider_dropdown)),
+    active=[],  # collapsed by default
+)
+
 right_panel = pn.Column(
     pn.pane.Markdown("# Provider Risk Dashboard"),
     pn.Row(provider_search, provider_dropdown),
     pn.bind(provider_view, provider_dropdown),
-    pn.bind(stability_view, provider_dropdown),
+    stability_section,
 )
 
 dashboard = pn.Row(left_panel, right_panel)
