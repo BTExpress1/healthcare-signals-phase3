@@ -66,7 +66,9 @@ def update_dropdown(search_text):
         provider_dropdown.options = provider_ids_sorted_str
     else:
         filtered = [pid for pid in provider_ids_sorted_str if search_text in pid]
-        provider_dropdown.options = filtered if filtered else ["No matches"]
+        # If no matches, fall back to full list instead of a fake value
+        provider_dropdown.options = filtered if filtered else provider_ids_sorted_str
+
 
 def provider_from_dropdown(value):
     try:
@@ -83,10 +85,11 @@ def provider_view(pid):
         .sort_values("snapshot_dt")
     )
 
-    # Ensure datetime for plotting & spans
+    if df.empty:
+        return pn.pane.Markdown(f"### No data available for provider {pid}")
+
     df["snapshot_dt"] = pd.to_datetime(df["snapshot_dt"])
 
-    # === Main trends ===
     line_plot = df.hvplot.line(
         x="snapshot_dt",
         y="mean_daily_claims_90d",
@@ -104,7 +107,6 @@ def provider_view(pid):
         color="red",
     ).opts(xrotation=45, xticks=6)
 
-    # === Anomaly shading on risk chart ===
     anomaly_dates = df.loc[df["anomaly_total_flags"] > 0, "snapshot_dt"].unique()
 
     if len(anomaly_dates):
@@ -117,7 +119,6 @@ def provider_view(pid):
     else:
         risk_plot = risk_line
 
-    # === Risk decomposition (latest snapshot) ===
     latest = df.iloc[-1]
 
     comp_df = pd.DataFrame({
@@ -149,24 +150,6 @@ def provider_view(pid):
         rot=45,
     )
 
-    # === Stability / Volatility snapshot (latest window std devs) ===
-    vol_90 = latest.get("claims_std_90d", float("nan"))
-    vol_180 = latest.get("claims_std_180d", float("nan"))
-    vol_365 = latest.get("claims_std_365d", float("nan"))
-
-    stability_markdown = f"""
-    ### Stability / Volatility (Latest Snapshot)
-
-    - **90d volatility (claims_std_90d)**: {vol_90:.2f}
-    - **180d volatility (claims_std_180d)**: {vol_180:.2f}
-    - **365d volatility (claims_std_365d)**: {vol_365:.2f}
-
-    Lower volatility ⇒ more stable utilization pattern.
-    """
-
-    stability_panel = pn.pane.Markdown(stability_markdown)
-
-    # === Historical summary table ===
     summary_table = df[
         [
             "provider_id",
@@ -180,8 +163,6 @@ def provider_view(pid):
     ].sort_values("snapshot_dt")
 
     return pn.Column(
-        pn.pane.Markdown(f"## Provider {pid} Dashboard"),
-        stability_panel,
         pn.Row(line_plot, risk_plot),
         pn.pane.Markdown("### Risk Decomposition"),
         risk_decomp_plot,
@@ -189,6 +170,36 @@ def provider_view(pid):
         summary_table,
     )
 
+
+def stability_view(pid):
+    df = (
+        panel[panel.provider_id == pid]
+        .rename(columns={"as_of_date": "snapshot_dt"})
+        .sort_values("snapshot_dt")
+    )
+
+    if df.empty:
+        return pn.pane.Markdown(f"### Stability / Volatility\n\nNo data available for provider {pid}.")
+
+    df["snapshot_dt"] = pd.to_datetime(df["snapshot_dt"])
+
+    latest = df.iloc[-1]
+
+    vol_90 = latest.get("claims_std_90d", float("nan"))
+    vol_180 = latest.get("claims_std_180d", float("nan"))
+    vol_365 = latest.get("claims_std_365d", float("nan"))
+
+    stability_markdown = f"""
+### Stability / Volatility (Latest Snapshot)
+
+- **90d volatility (claims_std_90d)**: {vol_90:.2f}
+- **180d volatility (claims_std_180d)**: {vol_180:.2f}
+- **365d volatility (claims_std_365d)**: {vol_365:.2f}
+
+Lower volatility ⇒ more stable utilization pattern.
+"""
+
+    return pn.pane.Markdown(stability_markdown)
 
 
 
@@ -251,8 +262,10 @@ left_panel = pn.Column(
 right_panel = pn.Column(
     pn.pane.Markdown("# Provider Risk Dashboard"),
     pn.Row(provider_search, provider_dropdown),
-    pn.bind(provider_from_dropdown, provider_dropdown),
+    pn.bind(provider_view, provider_dropdown),
+    pn.bind(stability_view, provider_dropdown),
 )
+
 
 
 dashboard = pn.Row(left_panel, right_panel)
