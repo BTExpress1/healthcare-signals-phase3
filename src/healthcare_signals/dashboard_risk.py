@@ -287,14 +287,17 @@ top_risk_table.on_click(_on_top_risk_click)
 
 stability_section = pn.Accordion(
     ("Stability / Volatility", pn.bind(stability_view, provider_dropdown)),
-    #active=[],  # collapsed by default
+    active=[],  # collapsed by default
 )
 
 # --- Layout -----------------------------------------------------------------
 left_panel = pn.Column(
     pn.pane.Markdown("### Top Risk Providers"),
     top_risk_table,
+    pn.pane.Markdown("### Stability / Volatility"),
+    # pn.bind(stability_view, provider_dropdown),
     stability_section,
+    
 )
 
 
