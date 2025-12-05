@@ -36,6 +36,7 @@ def load_panel():
 panel = load_panel()
 
 # Sort providers by latest risk score (highest risk first)
+# Risk-ranked provider list
 risk_by_provider = (
     panel.sort_values("as_of_date")
          .groupby("provider_id")["provider_risk_score"]
@@ -46,19 +47,31 @@ risk_by_provider = (
 provider_ids_sorted = risk_by_provider.index.tolist()
 provider_ids_sorted_str = [str(pid) for pid in provider_ids_sorted]
 
-# Type-ahead search widget
-provider_search = pn.widgets.AutocompleteInput(
-    name="Provider ID",
-    options=provider_ids_sorted_str,
-    placeholder="Start typing provider_id…",
-    case_sensitive=False,
-    restrict=True,
+# Search widget (free text)
+provider_search = pn.widgets.TextInput(
+    name="Search Provider",
+    placeholder="Type part of a provider_id…",
 )
 
-def provider_from_search(value):
+# Dropdown that will update based on search
+provider_dropdown = pn.widgets.Select(
+    name="Select Provider",
+    options=provider_ids_sorted_str,
+)
+
+# Filter logic
+@pn.depends(provider_search.param.value, watch=True)
+def update_dropdown(search_text):
+    if not search_text:
+        provider_dropdown.options = provider_ids_sorted_str
+    else:
+        filtered = [pid for pid in provider_ids_sorted_str if search_text in pid]
+        provider_dropdown.options = filtered if filtered else ["No matches"]
+
+def provider_from_dropdown(value):
     try:
         pid = int(value)
-    except (TypeError, ValueError):
+    except:
         pid = provider_ids_sorted[0]
     return provider_view(pid)
 
@@ -164,8 +177,8 @@ def provider_view(pid):
 # Bind interactive component
 dashboard = pn.Column(
     pn.pane.Markdown("# Provider Risk Dashboard"),
-    provider_search,
-    pn.bind(provider_from_search, provider_search),
+    pn.Row(provider_search, provider_dropdown),
+    pn.bind(provider_from_dropdown, provider_dropdown),
 )
 
 dashboard.servable()
