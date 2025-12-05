@@ -5,7 +5,15 @@ import hvplot.pandas
 pn.extension('tabulator')
 
 # Load the risk-scored panel
-panel = pd.read_csv("../../data/processed/provider_panel_risk_scored.csv")
+import pandas as pd
+
+try:
+    # Local path for build time (when running panel convert)
+    panel = pd.read_csv("../../data/processed/provider_panel_risk_scored.csv")
+except FileNotFoundError:
+    # Browser / GitHub Pages path (same folder as index.html)
+    panel = pd.read_csv("provider_panel_risk_scored.csv")
+
 
 # Prepare provider list for dropdown
 provider_ids = sorted(panel['provider_id'].unique())
