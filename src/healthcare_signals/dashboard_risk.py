@@ -149,6 +149,23 @@ def provider_view(pid):
         rot=45,
     )
 
+    # === Stability / Volatility snapshot (latest window std devs) ===
+    vol_90 = latest.get("claims_std_90d", float("nan"))
+    vol_180 = latest.get("claims_std_180d", float("nan"))
+    vol_365 = latest.get("claims_std_365d", float("nan"))
+
+    stability_markdown = f"""
+    ### Stability / Volatility (Latest Snapshot)
+
+    - **90d volatility (claims_std_90d)**: {vol_90:.2f}
+    - **180d volatility (claims_std_180d)**: {vol_180:.2f}
+    - **365d volatility (claims_std_365d)**: {vol_365:.2f}
+
+    Lower volatility ⇒ more stable utilization pattern.
+    """
+
+    stability_panel = pn.pane.Markdown(stability_markdown)
+
     # === Historical summary table ===
     summary_table = df[
         [
@@ -164,12 +181,14 @@ def provider_view(pid):
 
     return pn.Column(
         pn.pane.Markdown(f"## Provider {pid} Dashboard"),
+        stability_panel,
         pn.Row(line_plot, risk_plot),
         pn.pane.Markdown("### Risk Decomposition"),
         risk_decomp_plot,
         pn.pane.Markdown("### Historical Summary"),
         summary_table,
     )
+
 
 
 
@@ -207,10 +226,18 @@ def _on_top_risk_select(event):
     if not event.new:
         return
     row_idx = event.new[0]
-    pid = str(top_risk_df.iloc[row_idx]["provider_id"])
+    raw_id = top_risk_df.iloc[row_idx]["provider_id"]
+    try:
+        pid_int = int(raw_id)
+    except (TypeError, ValueError):
+        pid_int = provider_ids_sorted[0]
+
+    pid = str(pid_int)
+
     # Update search text and dropdown selection
     provider_search.value = pid
-    provider_dropdown.value = pid   # triggers provider_from_dropdown
+    provider_dropdown.value = pid  # triggers provider_from_dropdown
+
 
 
 top_risk_table.param.watch(_on_top_risk_select, "selection")
