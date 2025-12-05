@@ -2,18 +2,27 @@ import pandas as pd
 import panel as pn
 import hvplot.pandas
 import os
+import holoviews as hv
 
 pn.extension('tabulator')
 
+
+
 # Load the risk-scored panel
 def load_panel():
-    # Local load (panel convert / dev)
-    try:
-        return pd.read_csv("../../data/processed/provider_panel_risk_scored.csv")
-    except Exception:
-        pass
+    # Local paths for panel convert / dev (try a few common roots)
+    candidate_paths = [
+        "../../data/processed/provider_panel_risk_scored.csv",
+        "../data/processed/provider_panel_risk_scored.csv",
+        "data/processed/provider_panel_risk_scored.csv",
+    ]
+    for path in candidate_paths:
+        try:
+            return pd.read_csv(path)
+        except Exception:
+            pass
 
-    # Browser (Pyodide) load over HTTP from docs/
+    # Browser (Pyodide) → load over HTTP from docs/
     try:
         from pyodide.http import open_url
         f = open_url("provider_panel_risk_scored.csv")
@@ -21,19 +30,26 @@ def load_panel():
     except Exception as e:
         raise FileNotFoundError(
             "provider_panel_risk_scored.csv not found. "
-            "Ensure it exists in docs/ on GitHub Pages."
+            "Ensure docs/provider_panel_risk_scored.csv exists and is committed."
         ) from e
 
 panel = load_panel()
 
+# Sort providers by latest risk score (highest risk first)
+risk_by_provider = (
+    panel.sort_values("as_of_date")
+         .groupby("provider_id")["provider_risk_score"]
+         .last()
+         .sort_values(ascending=False)
+)
 
-# Prepare provider list for dropdown
-provider_ids = sorted(panel['provider_id'].unique())
+provider_ids_sorted = risk_by_provider.index.tolist()
 
 provider_selector = pn.widgets.Select(
     name="Provider ID",
-    options=provider_ids,
+    options=provider_ids_sorted,
 )
+
 
 def provider_view(pid):
     df = (
@@ -42,23 +58,70 @@ def provider_view(pid):
         .sort_values("snapshot_dt")
     )
 
+    # === Main trends ===
     line_plot = df.hvplot.line(
         x="snapshot_dt",
         y="mean_daily_claims_90d",
         title=f"Provider {pid} — 90d Claims Trend",
-        width=800,
-        height=300,
-    )
+        width=500,
+        height=320,
+    ).opts(xrotation=45, xticks=6)
 
-    risk_plot = df.hvplot.line(
+    risk_line = df.hvplot.line(
         x="snapshot_dt",
         y="provider_risk_score",
         title=f"Provider {pid} — Risk Score Trend",
-        width=800,
-        height=300,
+        width=500,
+        height=320,
         color="red",
+    ).opts(xrotation=45, xticks=6)
+
+    # === Anomaly shading on risk chart ===
+    anomaly_dates = df.loc[df["anomaly_total_flags"] > 0, "snapshot_dt"].unique()
+
+    if len(anomaly_dates):
+        spans = hv.Overlay([
+            hv.VSpan(d - pd.Timedelta(days=0.5),
+                     d + pd.Timedelta(days=0.5)).opts(alpha=0.15, color="orange")
+            for d in anomaly_dates
+        ])
+        risk_plot = (risk_line * spans)
+    else:
+        risk_plot = risk_line
+
+    # === Risk decomposition (latest snapshot) ===
+    latest = df.iloc[-1]
+
+    comp_df = pd.DataFrame({
+        "component": [
+            "Isolation Forest",
+            "LOF",
+            "Z-score Anomalies",
+            "Momentum (Claims 90d Δ)",
+            "Recency",
+            "Z-score Shift",
+        ],
+        "value": [
+            latest.get("iforest_norm", 0.0),
+            latest.get("lof_norm", 0.0),
+            latest.get("flags_norm", 0.0),
+            latest.get("momentum_norm", 0.0),
+            latest.get("recency_norm", 0.0),
+            latest.get("zscore_shift_norm", 0.0),
+        ],
+    })
+
+    risk_decomp_plot = comp_df.hvplot.bar(
+        x="component",
+        y="value",
+        ylim=(0, 1),
+        title="Risk Decomposition (Latest Snapshot)",
+        width=1000,
+        height=300,
+        rot=45,
     )
 
+    # === Historical summary table ===
     summary_table = df[
         [
             "provider_id",
@@ -73,11 +136,14 @@ def provider_view(pid):
 
     return pn.Column(
         pn.pane.Markdown(f"## Provider {pid} Dashboard"),
-        line_plot,
-        risk_plot,
+        pn.Row(line_plot, risk_plot),         # side-by-side charts
+        pn.pane.Markdown("### Risk Decomposition"),
+        risk_decomp_plot,
         pn.pane.Markdown("### Historical Summary"),
-        summary_table
+        summary_table,
     )
+
+
 
 # Bind interactive component
 dashboard = pn.Column(
