@@ -4,9 +4,11 @@ import hvplot.pandas  # noqa: F401
 import holoviews as hv
 import numpy as np
 
+from panel.template import FastListTemplate
 
-pn.extension("tabulator")
 
+
+pn.extension('tabulator')
 
 # --- Load the risk-scored panel --------------------------------------------
 def load_panel():
@@ -392,6 +394,10 @@ def init_provider_from_url():
 
 pn.state.onload(init_provider_from_url)
 
+template = FastListTemplate(
+    title="Healthcare Signals Dashboard",
+    favicon="favicon.png",
+    main=[pn.Row(left_panel, right_panel)],
+)
 
-dashboard = pn.Row(left_panel, right_panel)
-dashboard.servable()
+template.servable()
