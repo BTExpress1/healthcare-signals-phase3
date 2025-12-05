@@ -5,7 +5,7 @@ import hvplot.pandas
 pn.extension('tabulator')
 
 # Load the risk-scored panel
-panel = pd.read_parquet("../../data/processed/provider_panel_risk_scored.parquet")
+panel = pd.read_csv("../../data/processed/provider_panel_risk_scored.csv")
 
 # Prepare provider list for dropdown
 provider_ids = sorted(panel['provider_id'].unique())
