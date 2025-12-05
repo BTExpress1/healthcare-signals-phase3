@@ -8,22 +8,20 @@ pn.extension('tabulator')
 # Load the risk-scored panel
 def load_panel():
     # Local load (panel convert / dev)
-    local_path = os.path.join(
-        os.path.dirname(__file__),
-        "../../data/processed/provider_panel_risk_scored.csv"
-    )
-    if os.path.exists(local_path):
-        return pd.read_csv(local_path)
+    try:
+        return pd.read_csv("../../data/processed/provider_panel_risk_scored.csv")
+    except Exception:
+        pass
 
     # Browser (Pyodide) load over HTTP from docs/
     try:
-        from pyodide.http import open_url  # available in browser
+        from pyodide.http import open_url
         f = open_url("provider_panel_risk_scored.csv")
         return pd.read_csv(f)
     except Exception as e:
         raise FileNotFoundError(
-            "Could not load provider_panel_risk_scored.csv. "
-            "Ensure docs/provider_panel_risk_scored.csv exists and is committed."
+            "provider_panel_risk_scored.csv not found. "
+            "Ensure it exists in docs/ on GitHub Pages."
         ) from e
 
 panel = load_panel()
