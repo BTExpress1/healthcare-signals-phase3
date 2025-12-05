@@ -318,7 +318,8 @@ top_risk_table = pn.widgets.Tabulator(
     selectable=True,
     height=500,
     width=350,
-    editors=non_editable_editors,
+    editors=non_editable_editors, # makes the table fully read-only
+    show_index=False,             # hides the 0-based index column
 )
 
 def _on_top_risk_click(event):
