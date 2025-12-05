@@ -173,12 +173,62 @@ def provider_view(pid):
 
 
 
+# === Top Risk Providers table (left side) ===
+TOP_N = 10
+
+_latest = (
+    panel.sort_values("as_of_date")
+         .groupby("provider_id")
+         .tail(1)
+)
+
+top_risk_df = (
+    _latest.sort_values("provider_risk_score", ascending=False)
+           .head(TOP_N)[
+               [
+                   "provider_id",
+                   "provider_risk_score",
+                   "risk_rank",
+                   "anomaly_total_flags",
+                   "days_since_last",
+               ]
+           ]
+           .reset_index(drop=True)
+)
+
+top_risk_table = pn.widgets.Tabulator(
+    top_risk_df,
+    selectable=True,
+    height=500,
+    width=350,
+)
+
+def _on_top_risk_select(event):
+    if not event.new:
+        return
+    row_idx = event.new[0]
+    pid = str(top_risk_df.iloc[row_idx]["provider_id"])
+    # Update search text and dropdown selection
+    provider_search.value = pid
+    provider_dropdown.value = pid   # triggers provider_from_dropdown
+
+
+top_risk_table.param.watch(_on_top_risk_select, "selection")
 
 # Bind interactive component
-dashboard = pn.Column(
+left_panel = pn.Column(
+    pn.pane.Markdown("### Top Risk Providers"),
+    top_risk_table,
+)
+
+right_panel = pn.Column(
     pn.pane.Markdown("# Provider Risk Dashboard"),
     pn.Row(provider_search, provider_dropdown),
     pn.bind(provider_from_dropdown, provider_dropdown),
 )
 
+
+dashboard = pn.Row(left_panel, right_panel)
+
 dashboard.servable()
+
