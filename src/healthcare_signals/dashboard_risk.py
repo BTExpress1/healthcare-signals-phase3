@@ -2,6 +2,8 @@ import pandas as pd
 import panel as pn
 import hvplot.pandas  # noqa: F401
 import holoviews as hv
+import numpy as np
+
 
 pn.extension("tabulator")
 
@@ -101,59 +103,81 @@ def provider_view(pid):
 
     df["snapshot_dt"] = pd.to_datetime(df["snapshot_dt"])
 
-    line_plot = df.hvplot.line(
+    # === Multi-metric chart: 90d claims + risk score + anomalies ===
+    base_opts = dict(width=1000, height=320, line_width=2)
+
+    claims_line = df.hvplot.line(
         x="snapshot_dt",
         y="mean_daily_claims_90d",
-        title=f"Provider {pid} — 90d Claims Trend",
-        width=500,
-        height=320,
+        label="90d avg claims",
+        ylabel="90d avg claims",
+        **base_opts,
     ).opts(xrotation=45, xticks=6)
 
     risk_line = df.hvplot.line(
         x="snapshot_dt",
         y="provider_risk_score",
-        title=f"Provider {pid} — Risk Score Trend",
-        width=500,
-        height=320,
+        label="Risk score (pct)",
+        yaxis="right",
+        ylabel="Risk score (pct)",
         color="red",
+        **base_opts,
     ).opts(xrotation=45, xticks=6)
 
-    anomaly_dates = df.loc[df["anomaly_total_flags"] > 0, "snapshot_dt"].unique()
-
-    if len(anomaly_dates):
+    anom_df = df[df["anomaly_total_flags"] > 0]
+    if not anom_df.empty:
+        anomaly_points = anom_df.hvplot.scatter(
+            x="snapshot_dt",
+            y="mean_daily_claims_90d",
+            size=9,
+            marker="triangle",
+            label="Anomaly day",
+        )
         spans = hv.Overlay(
             [
                 hv.VSpan(
-                    d - pd.Timedelta(days=0.5),
-                    d + pd.Timedelta(days=0.5),
-                ).opts(alpha=0.15, color="orange")
-                for d in anomaly_dates
+                    d - pd.Timedelta(hours=12),
+                    d + pd.Timedelta(hours=12),
+                ).opts(alpha=0.12, color="orange")
+                for d in anom_df["snapshot_dt"].unique()
             ]
         )
-        risk_plot = risk_line * spans
+        multi_plot = (claims_line * risk_line * anomaly_points * spans).opts(
+            legend_position="top_left"
+        )
     else:
-        risk_plot = risk_line
+        multi_plot = (claims_line * risk_line).opts(legend_position="top_left")
 
+    multi_plot = multi_plot.opts(
+        title=f"Provider {pid} — 90d Claims vs Risk Score",
+        show_grid=True,
+    )
+
+    # === Normalized risk decomposition + dominant driver text ===
     latest = df.iloc[-1]
+
+    components = [
+        ("Isolation Forest", latest.get("iforest_norm", 0.0)),
+        ("LOF", latest.get("lof_norm", 0.0)),
+        ("Z-score Anomalies", latest.get("flags_norm", 0.0)),
+        ("Momentum (Claims 90d Δ)", latest.get("momentum_norm", 0.0)),
+        ("Recency", latest.get("recency_norm", 0.0)),
+        ("Z-score Shift", latest.get("zscore_shift_norm", 0.0)),
+    ]
+
+    labels = [c[0] for c in components]
+    raw_vals = np.array([max(float(c[1]), 0.0) for c in components], dtype="float")
+
+    total = raw_vals.sum()
+    if total > 0:
+        norm_vals = raw_vals / total
+    else:
+        norm_vals = raw_vals  # all zeros
 
     comp_df = pd.DataFrame(
         {
-            "component": [
-                "Isolation Forest",
-                "LOF",
-                "Z-score Anomalies",
-                "Momentum (Claims 90d Δ)",
-                "Recency",
-                "Z-score Shift",
-            ],
-            "value": [
-                latest.get("iforest_norm", 0.0),
-                latest.get("lof_norm", 0.0),
-                latest.get("flags_norm", 0.0),
-                latest.get("momentum_norm", 0.0),
-                latest.get("recency_norm", 0.0),
-                latest.get("zscore_shift_norm", 0.0),
-            ],
+            "component": labels,
+            "value": norm_vals,
         }
     )
 
@@ -161,12 +185,29 @@ def provider_view(pid):
         x="component",
         y="value",
         ylim=(0, 1),
-        title="Risk Decomposition (Latest Snapshot)",
+        title="Risk Decomposition (Normalized to 1.0)",
         width=1000,
         height=300,
         rot=45,
     )
 
+    if norm_vals.sum() > 0:
+        top_idx = int(norm_vals.argmax())
+        top_label = labels[top_idx]
+        top_pct = float(norm_vals[top_idx] * 100.0)
+        driver_text = (
+            f"**Dominant driver:** {top_label} "
+            f"(~{top_pct:0.1f}% of current risk signal)."
+        )
+    else:
+        driver_text = "**Dominant driver:** not available for this provider."
+
+    driver_pane = pn.pane.Markdown(
+        driver_text,
+        styles={"font-size": "11px", "margin-top": "4px"},
+    )
+
+    # === Historical summary (scrollable widget) ===
     summary_df = df[
         [
             "provider_id",
@@ -175,22 +216,25 @@ def provider_view(pid):
             "risk_rank",
             "anomaly_total_flags",
             "claims_90d_vs_prev90d",
-            "days_since_last",            
+            "days_since_last",
         ]
     ].sort_values("snapshot_dt")
-    
+
     summary_table = pn.widgets.DataFrame(
         summary_df,
-        height=180,        
+        height=180,
     )
 
     return pn.Column(
-        pn.Row(line_plot, risk_plot),
+        pn.pane.Markdown(f"## Provider {pid}"),
+        multi_plot,
         pn.pane.Markdown("### Risk Decomposition"),
         risk_decomp_plot,
+        driver_pane,
         pn.pane.Markdown("### Historical Summary"),
         summary_table,
     )
+
 
 
 def stability_view(pid):
@@ -298,9 +342,8 @@ stability_section = pn.Accordion(
 # --- Layout -----------------------------------------------------------------
 left_panel = pn.Column(
     pn.pane.Markdown("### Top Risk Providers"),
-    top_risk_table,
-    pn.pane.Markdown("### Stability / Volatility"),
-    pn.bind(stability_view, provider_dropdown),
+    top_risk_table,    
+    # pn.bind(stability_view, provider_dropdown),
     #stability_section,
     
 )
@@ -313,6 +356,31 @@ right_panel = pn.Column(
     pn.bind(provider_view, provider_dropdown),
     
 )
+
+def init_provider_from_url():
+    loc = pn.state.location
+    if loc is None:
+        return
+
+    params = loc.query_params or {}
+    raw = params.get("provider_id") or params.get("pid")
+    if not raw:
+        return
+
+    if isinstance(raw, (list, tuple)):
+        raw = raw[0]
+
+    pid = str(raw).strip()
+    if not pid:
+        return
+
+    provider_search.value = pid
+    if pid in provider_dropdown.options:
+        provider_dropdown.value = pid
+
+
+pn.state.onload(init_provider_from_url)
+
 
 dashboard = pn.Row(left_panel, right_panel)
 dashboard.servable()
